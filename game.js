@@ -43,7 +43,7 @@ async function rpc(fn, args) {
 /* ---------- LOGIN: pintu merah besar, terbuka setelah login berhasil ---------- */
 function loginScreen(msg = '') {
   stop(); scene('closed');
-  app.innerHTML = `<div class="login" id="lg">${SUITS}<h1 class="logo">DOOR<span class="sl">//</span>3</h1>
+  app.innerHTML = `<div class="login" id="lg">${SUITS}<h1 class="logo">Staff <span class="sl">Only</span></h1>
     <div class="hall"><div class="dr big" id="bd" style="${doorVars(COLORS[0], 100)}">${doorInner()}</div></div>
     <form class="plaque" id="f">
       <label>Username<input name="u" autocomplete="username" required></label>
@@ -56,7 +56,7 @@ function loginScreen(msg = '') {
     const f = e.target, b = f.querySelector('button'); b.disabled = true;
     try {
       const d = await rpc('login', {p_username: f.u.value, p_code: f.c.value});
-      if (d.error) throw new Error(d.error);
+      if (d.error) throw new Error('Username atau password salah.');   // teks dari server bilang "kode"; di sini disamakan dengan label "Password"
       token = d.token;
       $('lg').classList.add('go'); $('bd').classList.add('op');   // pintu terbuka...
       await sleep(RM ? 0 : 800);
@@ -68,24 +68,197 @@ function loginScreen(msg = '') {
 }
 
 function route() {
-  if (st.status === 'ready') intro(0);
+  if (st.status === 'ready') st.admin ? adminHome() : story();
   else if (st.status === 'playing') game();
   else result();
 }
 
-function intro(i) {
-  stop(); scene('closed');
-  const S = [
-    ['Welcome', 'Selamat datang di DOOR//3. Nikmati kunjungan Anda.', 'Jalan-jalan', ''],
-    ['Staff Only', 'Pintu itu seharusnya terkunci.', 'Masuk', 'warn'],
-    ['DOOR<span class="sl">//</span>3', `Ada ${st.total} ronde. Tiap ronde punya 3 pintu: merah, biru, kuning. Satu benar, dua salah. Tidak ada petunjuk, temukan urutannya sendiri. Posisi dan bentuk pintu terus berubah, jadi ingat warnanya. Salah satu pintu saja, kamu kembali ke awal. Waktu mulai dihitung saat kamu menekan Mulai dan terus berjalan (${mmss(st.limit)}), walau halaman ditutup.`, 'Mulai', '']
-  ][i];
-  app.innerHTML = `<div class="card">${S[3] ? '<div class="tape"></div>' : ''}${SUITS}<h1 class="logo">${S[0]}</h1><p>${S[1]}</p><button class="btn" id="n">${S[2]}</button>${i === 0 && st.admin ? '<button class="btn alt" id="lb">Leaderboard</button>' : ''}</div>`;
-  const lb = $('lb'); if (lb) lb.onclick = board;
-  $('n').onclick = async () => {
-    if (i < 2) return intro(i + 1);
-    try { await rpc('start_game', {p_token: token}); route(); } catch (x) { alert(x.message); }
+// Admin tidak ditodong Asayi?: langsung ke menu (leaderboard), alur cerita bisa dicoba lewat tombol.
+function adminHome() {
+  stop(); scene('closed'); rpgOff();
+  app.innerHTML = `<div class="card">${SUITS}<h1 class="logo">Staff <span class="sl">Only</span></h1>
+    <p>Halo, ${esc(st.name)}. Kamu masuk sebagai admin.</p>
+    <button class="btn" id="go">Coba alurnya</button><button class="btn alt" id="lb">Leaderboard</button></div>`;
+  $('go').onclick = story;
+  $('lb').onclick = board;
+}
+
+/* ---------- STORY: Asayi? ----------
+   Alur untuk pemain (non-admin) sebelum game asli: ditodong, pintu terkunci, tawa horor, penjelasan, latihan 3 pintu (merah, biru, kuning),
+   lalu satu pintu untuk memulai. Seluruhnya di sisi klien. Server baru dipanggil saat pintu terakhir ditekan (start_game), jadi waktu
+   baru berjalan di situ. Pintu latihan TIDAK memanggil choose(), jadi jalur asli tidak ikut terbaca. */
+const WHO = 'Asayi?';
+let rpg = null, skipType = null, advance = null;
+
+// Tap / Enter pada pintu. Dipakai bersama pointerdown (seperti game asli) + klik dari keyboard.
+const tap = (el, fn) => { el.onpointerdown = ev => { ev.preventDefault(); fn(); }; el.onclick = ev => { if (ev.detail === 0) fn(); }; };
+
+function rpgEl() {
+  if (rpg) return rpg;
+  rpg = document.createElement('div'); rpg.id = 'rpg';
+  rpg.innerHTML = `<img class="char" src="char.png" alt="" draggable="false">
+    <div class="dbox"><div class="who">${WHO}</div><p class="tx" aria-live="polite"></p><i class="more">&#9660;</i></div>`;
+  rpg.querySelector('.dbox').onclick = () => {
+    if (skipType) skipType();                                           // masih mengetik: langsung tampilkan semua
+    else if (advance) { const a = advance; advance = null; a(); }       // sudah selesai: lanjut
   };
+  document.body.appendChild(rpg);
+  return rpg;
+}
+addEventListener('keydown', e => {
+  if (!rpg || !rpg.classList.contains('on') || (e.key !== 'Enter' && e.key !== ' ')) return;
+  if (e.target instanceof Element && e.target.closest('button,input')) return;
+  e.preventDefault(); rpg.querySelector('.dbox').click();
+});
+function rpgOff() {
+  if (!rpg) return;
+  const r = rpg; rpg = null; skipType = null; advance = null;
+  r.classList.remove('on', 'wait'); setTimeout(() => r.remove(), 900);
+}
+
+// Ketik satu baris dialog (efek mesin ketik). Selesai kalau semua huruf tampil atau kotak diketuk. mad = Asayi? marah (kotak merah + karakter bergetar).
+function type(text, mad = false) {
+  const r = rpgEl(), tx = r.querySelector('.tx');
+  if (skipType) skipType();
+  r.classList.remove('wait', 'mad'); r.classList.add('on');
+  if (mad) { void r.offsetWidth; r.classList.add('mad'); }
+  return new Promise(res => {
+    // sisa teks tetap ikut dirender (tersembunyi) supaya tinggi kotak sudah final sejak huruf pertama
+    const show = n => { tx.innerHTML = esc(text.slice(0, n)) + '<span class="gh">' + esc(text.slice(n)) + '</span>'; };
+    if (RM) { show(text.length); return res(); }
+    let i = 0; show(0);
+    const t = setInterval(() => { show(++i); if (i >= text.length) done(); }, 22);
+    const done = () => { clearInterval(t); show(text.length); skipType = null; res(); };
+    skipType = done;
+  });
+}
+// Satu baris dialog lalu tunggu pemain mengetuk kotak (muncul tanda ▼).
+async function say(text, mad) {
+  await type(text, mad);
+  rpgEl().classList.add('wait');
+  await new Promise(r => advance = r);
+  rpgEl().classList.remove('wait');
+}
+
+// Satu pintu besar berdiri di dasar dinding, di tengah.
+function lone(ci) {
+  const s = $('s'), W = s.clientWidth - 2 * M, H = s.clientHeight, w = Math.min(W * .4, 150, H * .62 / ASP);
+  const q = {w, h: w * ASP, x: (W - w) / 2, y: H - w * ASP, rot: 0}, e = doorEl(ci, q, false);
+  place(e, q, 0); s.appendChild(e); return e;
+}
+// Tiga pintu (posisi diacak tiap kali, seperti game asli, jadi yang diingat tetap warnanya). onPick(warna, elemen).
+function trialDoors(onPick) {
+  const s = $('s'), pl = plan(1); s.innerHTML = '';
+  return pl.p.map((q, i) => {
+    const ci = pl.ord[i], e = doorEl(ci, q, false);
+    place(e, q, 0); tap(e, () => onPick(ci, e)); s.appendChild(e); return e;
+  });
+}
+async function clearStage() {
+  const s = $('s'); if (!s) return;
+  if (s.children.length && !RM) await s.animate([{opacity: 1}, {opacity: 0}], {duration: 320, fill: 'forwards'}).finished.catch(() => {});
+  s.getAnimations().forEach(a => a.cancel()); s.innerHTML = ''; msg('');
+}
+
+// Tawa horor menimpa seluruh layar.
+async function laugh() {
+  const R = Math.random, N = 8, o = document.createElement('div'); o.id = 'laugh'; o.setAttribute('aria-hidden', 'true');
+  const cs = ['#d4202c', '#8f1220', '#d4202c', '#f3e6c2', '#a3162a'];
+  o.innerHTML = Array.from({length: N}, (_, i) =>
+    `<div class="row" style="--t:${i * 100 / N - 1}dvh;--h:${100 / N + 3}dvh;--ml:${-R() * 40}vw;--r:${(R() - .5) * 5}deg;--jx:${(R() - .5) * 16}px;--jy:${(R() - .5) * 10}px;--dl:${-R()}s;--o:${.5 + R() * .5};--c:${cs[Math.floor(R() * cs.length)]}">${'HA'.repeat(40)}</div>`).join('')
+    + '<div class="big">HAHAHAHA</div>';
+  document.body.appendChild(o);
+  await sleep(RM ? 1400 : 3300);
+  if (!RM) await o.animate([{opacity: 1}, {opacity: 0}], {duration: 600, fill: 'forwards'}).finished.catch(() => {});
+  o.remove();
+}
+
+// Latihan: 3 ronde, urutan jawaban TETAP merah, biru, kuning. Salah = Asayi? marah, pintu itu terkunci, tidak ada ulang dari awal.
+function trialRound(R) {
+  return new Promise(resolve => {
+    let n = 0, fin = false;
+    type(R.say);
+    trialDoors((ci, e) => {
+      if (fin || e.classList.contains('bad')) return;
+      if (ci === R.ci) { fin = true; e.classList.add('op'); return resolve(e); }
+      e.classList.add('bad'); type(R.mad[Math.min(n++, R.mad.length - 1)], true);
+    });
+  });
+}
+async function trial() {
+  const R = [
+    {ci: 0, say: 'Ronde pertama. Tekan pintu merah.', ok: 'Bagus. Pintunya terbuka.',
+     mad: ['Hei! Aku bilang pintu merah. Dengarkan baik-baik.', 'Salah lagi! Merah. Kamu mendengarkan tidak?']},
+    {ci: 1, say: 'Ronde kedua. Sekarang tekan pintu biru.', ok: 'Tepat sekali.',
+     mad: ['Salah. Aku bilang pintu biru, bukan yang itu.', 'Lagi-lagi salah! Biru. Seperti langit dan laut.']},
+    {ci: 2, say: 'Ronde ketiga. Kali ini pilih sendiri. Aku tidak akan membantumu.', ok: '',
+     mad: ['Salah. Bukan pintu itu. Coba pikirkan lagi.', 'Masih salah. Pikirkan baik-baik.']}
+  ];
+  for (let i = 0; i < R.length; i++) {
+    await trialRound(R[i]);
+    if (i < R.length - 1) { await type(R[i].ok); await sleep(RM ? 600 : 1300); await clearStage(); }
+  }
+}
+
+async function story() {
+  stop(); scene('story'); busy = false; PRE = null; rpgOff();
+  app.innerHTML = `<div class="sw"><div class="stage" id="s"></div><div class="msg" id="m"></div></div><div class="deck"></div>`;
+  await sleep(RM ? 0 : 450);
+
+  // 1. Ditodong, lalu pintu keluar yang tidak bisa dibuka
+  await say('Berhenti di situ. Kamu bukan staf, bukan?');
+  await say('Ini area khusus staf. Kamu tidak seharusnya berada di sini.');
+  const out = lone(0);
+  type('Kalau begitu, silakan pergi. Pintu keluarnya ada di sana. Coba saja buka.');
+  await new Promise(r => tap(out, r));
+  if (skipType) skipType();
+  out.classList.add('jam'); msg('Terkunci.');
+  await sleep(RM ? 600 : 1100);
+  await laugh();                                         // HAHAHAHA menimpa layar
+  msg('');
+
+  // 2. Terjebak
+  await say('Tidak mau terbuka, bukan? Sayang sekali.');
+  await say('Kamu terjebak di sini. Dan satu-satunya jalan keluar adalah bermain denganku.');
+  await say('Tenang, aturannya mudah. Biar kuperlihatkan cuplikannya dulu. Ikuti petunjukku, ya.');
+  await say('Di setiap ronde ada tiga pintu: merah, biru, dan kuning. Hanya satu yang benar, dua lainnya salah.');
+  await clearStage();
+
+  // 3. Latihan (merah, biru, kuning)
+  await trial();
+  await say('Bagus sekali. Kamu cepat belajar.');
+  await clearStage();
+
+  // 4. Penjelasan game asli: ini terakhir kalinya Asayi? muncul
+  const min = Math.round(st.limit / 60);
+  await say(`Permainan sebenarnya sama persis seperti tadi, hanya saja tanpa petunjukku. Ada ${st.total} ronde yang harus kamu lewati, dan waktumu hanya ${min} menit.`);
+  await say('Salah memilih satu pintu saja, kamu kembali ke pintu pertama. Posisi dan bentuk pintu akan terus berubah, jadi ingat warnanya, bukan tempatnya.');
+  await say('Waktu terus berjalan walaupun halaman ini kamu tutup. Jadi, jangan coba-coba kabur.');
+  await say('Ini terakhir kalinya kamu melihatku. Semoga beruntung.');
+
+  // 5. Pastikan paham, lalu satu pintu untuk memulai
+  const go = lone(0);
+  type('Sudah paham? Kalau begitu, tekan pintu itu untuk memulai. Waktumu mulai berjalan begitu pintunya terbuka.');
+  let sent = false;
+  for (;;) {
+    await new Promise(r => tap(go, r));
+    if (sent) continue; sent = true;
+    if (skipType) skipType();
+    go.classList.add('op'); msg('');
+    const start = rpc('start_game', {p_token: token});   // waktu mulai dihitung server dari sini
+    start.catch(() => {});                                // errornya ditangani di try bawah; ini cuma supaya browser tidak mencatat "unhandled rejection"
+    await sleep(RM ? 0 : 700);
+    const cover = glow(true, RM ? 1 : 900);               // cahaya hangat menutup layar, sama seperti masuk pintu di game
+    try {
+      const d = await start; if (d.error) throw new Error(d.error);
+      await cover.finished;
+    } catch (x) {
+      go.classList.remove('op'); glow(false, 300); msg(x.message); sent = false; continue;
+    }
+    rpgOff(); route();
+    await frames(3); glow(false, 600);
+    return;
+  }
 }
 
 /* ---------- GAME ---------- */
@@ -102,7 +275,7 @@ function enter(pl) {
 }
 
 function game() {
-  stop(); scene('game'); busy = false; PRE = null;
+  stop(); scene('game'); busy = false; PRE = null; rpgOff();
   app.innerHTML = `
     <div class="sw"><div class="stage" id="s"></div><div class="msg" id="m"></div></div>
     <div class="deck">
@@ -479,17 +652,17 @@ function glow(cover, ms) {
 }
 
 function result() {
-  stop();
+  stop(); rpgOff();
   const w = st.status === 'escaped';
   scene(w ? 'sky' : 'closed');
   app.innerHTML = `<div class="card">${SUITS}
     <h1>${w ? 'Congratulations,' : 'Waktu habis,'}<br>${esc(st.name)}.</h1>
-    <p>${w ? 'Kamu berhasil keluar dari DOOR//3.' : 'Kamu masih terjebak di DOOR//3.'}</p>
+    <p>${w ? 'Kamu berhasil keluar dari Staff Only.' : 'Kamu masih terjebak di Staff Only.'}</p>
     <div class="stats">
       <div><span>Waktu</span><b>${mmss(st.elapsed)}</b></div>
       <div><span>Percobaan</span><b>${st.attempts}</b></div>
       <div><span>Pintu terlewati</span><b>${st.cleared}</b></div>
-      <div><span>Session ID</span><b>DR-${esc(st.code)}</b></div>
+      <div><span>Session ID</span><b>SO-${esc(st.code)}</b></div>
     </div>
     <p class="mute">Screenshot halaman ini dan kirim ke admin.</p>${st.admin ? '<button class="btn alt" id="lb">Leaderboard</button>' : ''}</div>`;
   const lb = $('lb'); if (lb) lb.onclick = board;
@@ -497,7 +670,7 @@ function result() {
 
 // Leaderboard (khusus admin; server menolak akun non-admin)
 function board() {
-  stop(); scene('closed');
+  stop(); scene('closed'); rpgOff();
   app.innerHTML = `<div class="card">${SUITS}<h1>Leaderboard</h1><div id="lbl" class="mute">Memuat...</div>
     <button class="btn" id="rf">Segarkan</button><button class="btn alt" id="bk">Kembali</button></div>`;
   const el = $('lbl');
