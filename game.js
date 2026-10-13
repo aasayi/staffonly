@@ -160,16 +160,29 @@ async function clearStage() {
   s.getAnimations().forEach(a => a.cancel()); s.innerHTML = ''; msg('');
 }
 
-// Tawa horor menimpa seluruh layar.
+// Tawa horor: potongan HAHA muncul satu per satu, makin lama makin banyak dan makin cepat sampai layar penuh.
+// Teks besar di tengah diketik bertahap (H, HA, HAH, HAHA, ...). Layar pelan-pelan menggelap (lihat #laugh::before di CSS).
 async function laugh() {
-  const R = Math.random, N = 8, o = document.createElement('div'); o.id = 'laugh'; o.setAttribute('aria-hidden', 'true');
-  const cs = ['#d4202c', '#8f1220', '#d4202c', '#f3e6c2', '#a3162a'];
-  o.innerHTML = Array.from({length: N}, (_, i) =>
-    `<div class="row" style="--t:${i * 100 / N - 1}dvh;--h:${100 / N + 3}dvh;--ml:${-R() * 40}vw;--r:${(R() - .5) * 5}deg;--jx:${(R() - .5) * 16}px;--jy:${(R() - .5) * 10}px;--dl:${-R()}s;--o:${.5 + R() * .5};--c:${cs[Math.floor(R() * cs.length)]}">${'HA'.repeat(40)}</div>`).join('')
-    + '<div class="big">HAHAHAHA</div>';
+  const R = Math.random, o = document.createElement('div'); o.id = 'laugh'; o.setAttribute('aria-hidden', 'true');
+  o.innerHTML = '<div class="big"><span></span></div>';
   document.body.appendChild(o);
-  await sleep(RM ? 1400 : 3300);
-  if (!RM) await o.animate([{opacity: 1}, {opacity: 0}], {duration: 600, fill: 'forwards'}).finished.catch(() => {});
+  const big = o.querySelector('.big'), txt = big.firstChild, vw = innerWidth, vh = innerHeight, md = Math.min(vw, vh);
+  const FR = ['HA', 'HAHA', 'HAHAHA', 'HAHAHAHA', 'HAHAHAHAHA', 'HAHAHAHAHAHA', 'HAH', 'HAHAH'];   // pecahan tawa
+  const cs = ['#d4202c', '#8f1220', '#d4202c', '#f3e6c2', '#a3162a', '#ff4a3d'];
+  const pop = () => {
+    const t = FR[Math.floor(R() * FR.length)], fs = md * (.09 + R() * .2), w = t.length * .68 * fs, e = document.createElement('div');
+    e.className = 'hp'; e.textContent = t;
+    e.style.cssText = `left:${-w * .1 + R() * Math.max(0, vw - w * .8)}px;top:${-fs * .2 + R() * (vh - fs * .6)}px;font-size:${fs}px;color:${cs[Math.floor(R() * cs.length)]};--r:${(R() - .5) * 28}deg;--jx:${(R() - .5) * 14}px;--jy:${(R() - .5) * 9}px`;
+    o.insertBefore(e, big);                                // di bawah teks tengah
+  };
+  const word = 'HA'.repeat(8);
+  if (RM) { for (let i = 0; i < 24; i++) pop(); txt.textContent = word; await sleep(1400); o.remove(); return; }
+  const N = 30;                                            // jumlah potongan; jeda antar potongan menyusut dari 280ms ke 28ms
+  const pops = (async () => { await sleep(300); for (let i = 0; i < N; i++) { pop(); await sleep(280 * Math.pow(.1, i / (N - 1))); } })();
+  const typed = (async () => { await sleep(150); for (let k = 1; k <= word.length; k++) { txt.textContent = word.slice(0, k); await sleep(420 * Math.pow(.24, (k - 1) / (word.length - 1))); } })();
+  await Promise.all([pops, typed]);
+  await sleep(750);                                        // layar penuh sebentar
+  await o.animate([{opacity: 1}, {opacity: 0}], {duration: 600, fill: 'forwards'}).finished.catch(() => {});
   o.remove();
 }
 
@@ -232,9 +245,10 @@ async function story() {
   // 4. Penjelasan game asli: ini terakhir kalinya Asayi? muncul
   const min = Math.round(st.limit / 60);
   await say(`Permainan sebenarnya sama persis seperti tadi, hanya saja tanpa petunjukku. Ada ${st.total} ronde yang harus kamu lewati, dan waktumu hanya ${min} menit.`);
-  await say('Salah memilih satu pintu saja, kamu kembali ke pintu pertama. Posisi dan bentuk pintu akan terus berubah, jadi ingat warnanya, bukan tempatnya.');
-  await say('Waktu terus berjalan walaupun halaman ini kamu tutup. Jadi, jangan coba-coba kabur.');
-  await say('Ini terakhir kalinya kamu melihatku. Semoga beruntung.');
+  await say('Sekarang bagian terpentingnya. Ingat tadi? Merah, biru, lalu kuning. Itu sebuah urutan.');
+  await say('Permainan sebenarnya juga punya urutan warna seperti itu, dan urutannya selalu sama. Jadi yang harus kamu hafalkan bukan cuma warnanya, tapi urutan warnanya.');
+  await say('Salah memilih satu pintu saja, kamu kembali ke pintu pertama. Urutannya tetap sama, tapi posisi dan bentuk pintu terus berubah, jadi jangan ingat tempatnya.');
+  await say('Waktu terus berjalan walaupun halaman ini kamu tutup, jadi jangan coba-coba kabur. Ini terakhir kalinya kamu melihatku. Semoga beruntung.');
 
   // 5. Pastikan paham, lalu satu pintu untuk memulai
   const go = lone(0);

@@ -178,16 +178,20 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .dr.jam .lf{animation:jam .75s}
 @keyframes jam{0%,100%{transform:none}12%{transform:perspective(520px) rotateY(9deg)}24%{transform:perspective(520px) rotateY(1deg)}38%{transform:perspective(520px) rotateY(7deg)}50%{transform:perspective(520px) rotateY(0)}64%{transform:perspective(520px) rotateY(5deg)}80%{transform:perspective(520px) rotateY(1deg)}}
 
-/* tawa horor menimpa layar */
-#laugh{position:fixed;inset:0;z-index:90;overflow:hidden;background:radial-gradient(ellipse at 50% 50%,#3a0509 0,#0a0204 80%);animation:fadein .12s both}
+/* tawa horor: potongan HAHA muncul bertahap (makin banyak, makin cepat), teks besar di tengah diketik, layar pelan-pelan menggelap */
+#laugh{position:fixed;inset:0;z-index:90;overflow:hidden}
+#laugh::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 50%,#3a0509 0,#0a0204 85%);opacity:0;animation:dim 3.8s linear .1s forwards}
+@keyframes dim{to{opacity:.95}}
 #laugh::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.3) 0 2px,transparent 2px 5px);animation:flick 1.1s infinite}
-#laugh .row{position:absolute;left:0;right:0;top:var(--t);height:var(--h);margin-left:var(--ml);overflow:hidden;white-space:nowrap;
- font:700 calc(var(--h)*.9)/1 'Cormorant Garamond',Georgia,serif;letter-spacing:.02em;color:var(--c);opacity:var(--o);text-shadow:0 0 18px rgba(212,32,44,.7);
- transform:rotate(var(--r));animation:jit .16s steps(2) var(--dl) infinite}
-@keyframes jit{50%{transform:translate(var(--jx),var(--jy)) rotate(calc(var(--r)*-1))}}
-#laugh .big{position:absolute;inset:0;display:grid;place-items:center;font:700 min(15vw,26dvh)/1 'Cormorant Garamond',Georgia,serif;color:#f6e9c8;
+#laugh .hp{position:absolute;white-space:nowrap;font-family:'Cormorant Garamond',Georgia,serif;font-weight:700;line-height:1;letter-spacing:.02em;
+ text-shadow:0 0 16px rgba(212,32,44,.75),0 2px 0 rgba(0,0,0,.6);transform:rotate(var(--r));
+ animation:popin .16s cubic-bezier(.2,1.7,.4,1) both,jit .16s steps(2) .16s infinite}
+@keyframes popin{from{opacity:0;transform:scale(.2) rotate(var(--r))}to{opacity:1;transform:scale(1) rotate(var(--r))}}
+@keyframes jit{50%{transform:translate(var(--jx),var(--jy)) rotate(calc(var(--r)*-.6))}}
+#laugh .big{position:absolute;inset:0;display:grid;place-items:center;padding:0 4vw;font:700 min(22vw,24dvh)/.95 'Cormorant Garamond',Georgia,serif;color:#f6e9c8;
  text-shadow:0 0 30px #d4202c,0 0 80px #d4202c,0 4px 0 #000;animation:ha .22s ease-in-out infinite alternate}
-@keyframes ha{from{transform:scale(1) rotate(-2deg)}to{transform:scale(1.07) rotate(2deg)}}
+#laugh .big span{display:block;max-width:100%;text-align:center;overflow-wrap:anywhere;word-break:break-all}
+@keyframes ha{from{transform:scale(1) rotate(-1.5deg)}to{transform:scale(1.05) rotate(1.5deg)}}
 
 /* ===== HASIL / LEADERBOARD ===== */
 .stats div{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid rgba(201,162,39,.3);padding:9px 0}
